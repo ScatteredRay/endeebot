@@ -147,5 +147,5 @@
 
 (define (run) (irc:run-message-loop con debug: #t pong: #t))
 
-(run)
-;(while (#t) (handle-exceptions exn '() (run))) ; To Catch rrepl caused exceptions
+;(run)
+(while (#t) (handle-exceptions exn '() (run))) ; To Catch rrepl caused exceptions
