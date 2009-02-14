@@ -3,7 +3,7 @@
 (define-syntax while
   (syntax-rules ()
     ((while cond) (letrec ((loop (lambda () (if cond (loop) #f)))) (loop)))
-     ((while cond body ...) (letrec ((loop (lambda () (if cond (begin body ... (loop)) #f)))) (loop)))))
+    ((while cond body ...) (letrec ((loop (lambda () (if cond (begin body ... (loop)) #f)))) (loop)))))
 
 (require-extension remote-repl-server)
 (rrepl-server-start 5040)
@@ -26,7 +26,7 @@
                                        read)))
 
 (define (write-op-list) (with-output-to-file op-file
-                                               (lambda () (write op-list))))
+                          (lambda () (write op-list))))
 
 (read-op-list)
 
@@ -50,7 +50,7 @@
   (find
    (lambda (op)
      (and (equal? (car op) name)
-          (string-match (cdr op) host)))
+          (string-match (glob->regexp (cdr op)) host)))
    op-list))
 
 (define (message-dest msg)
@@ -123,9 +123,9 @@
 
 (irc:add-message-handler! con (lambda (msg)
                                 (let* ((search (string-search
-                                               (string-append "PRIVMSG (.*) :" bot-name "[,: ]*eval(.*)")
-                                               (irc:message-body msg)))
-                                      (resp-dest (message-dest msg)))
+                                                (string-append "PRIVMSG (.*) :" bot-name "[,: ]*eval(.*)")
+                                                (irc:message-body msg)))
+                                       (resp-dest (message-dest msg)))
                                   (handle-exceptions exn
                                                      (irc:say con
                                                               "Error in eval!"
@@ -148,4 +148,4 @@
 (define (run) (irc:run-message-loop con debug: #t pong: #t))
 
 ;(run)
-(while (#t) (handle-exceptions exn '() (run))) ; To Catch rrepl caused exceptions
+(while #t (handle-exceptions exn '() (run))) ; To Catch rrepl caused exceptions
