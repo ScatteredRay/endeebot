@@ -18,7 +18,15 @@
 (require-extension irc)
 (require-extension sandbox)
 
-(set! current-output-port (open-output-port "debug.log"))
+;(define current-file-output (open-output-file "debug.log"))
+
+;(define (get-current-file-output-port) current-file-output)
+
+;(set! current-output-port get-current-file-output-port)
+;(set! current-error-port get-current-file-output-port)
+
+;(set-current-output-port! (open-output-file "debug.log"))
+;(set-current-error-port! current-output-port)
 
 (define bot-name "endeebot")
 (define bot-server "irc.efnet.ch")
@@ -126,118 +134,123 @@
                              (cadr out))))
         #f)))
 
+(define (run-command msg)
+  (handle-exceptions
+   exn
+   #f
+   (match (get-bot-command msg)
+          ; Tempory Op
+          (('op 'me pass)
+           (if (find (lambda (op-pass) (equal? op-pass (cons (irc:message-sender msg) (->string pass))))
+                     op-pass-list)
+               (begin
+                 (set! temp-op-list
+                       (cons
+                        (cons (irc:message-sender msg) (message-hostmask msg))
+                        temp-op-list))
+                 (irc:command
+                  con
+                  (string-append "mode " channel-name " +o " (irc:message-sender msg))))
+               '()))
+          ; Eval
+          (('eval exp)
+           (handle-exceptions exn
+                              (irc:say con
+                                       "Error in eval!"
+                                       (message-dest msg))
+                              (irc:say con
+                                       (->string
+                                        (safe-eval
+                                         exp
+                                         fuel: 1000
+                                         allocation-limit: 1048576))
+                                       (message-dest msg)))))))
+
 (define (run-admin-command msg)
-  (match (get-bot-command msg)
-         ;; Add Op
-         (('add 'op user hostmask)
-          (set! op-list
-                (cons
-                 (cons (->string user) (->string hostmask))
-                 op-list))
-          (write-op-list)
-          (irc:say con
-                   (string-append
-                    "Added user \"" (->string user) "\" to op list.")
-                   (message-dest msg))
-          #t)
-         ; Remove Op
-         (('remove 'op user)
-          (set! op-list
-                (remove
-                 (lambda (curr-op)
-                   (if (equal? (car curr-op) (->string user))
-                       (begin
-                         (irc:say con
-                                  (string-append
-                                   "Removed user \"" (->string user) "\" with hostmask \"" (->string (cdr curr-op)) "\" from op list.")
-                                  (message-dest msg))
-                         #t)
-                       #f)) op-list))
-          (write-op-list))
-         ; Remove Op (With hostmask)
-         (('remove 'op user hostmask)
-          (set! op-list
-                (remove
-                 (lambda (curr-op)
-                   (if (equal? curr-op (cons (->string user) (->string hostmask)))
-                       (begin
-                         (irc:say con
-                                  (string-append
-                                   "Removed user \"" (->string user) "\" with hostmask \"" (->string (cdr curr-op)) "\" from op list.")
-                                  (message-dest msg))
-                         #t)
-                       #f)) op-list))
-          (write-op-list))
-         ; Temp Op Pass set
-         (('set 'pass pass)
-          (set! op-pass-list
-                (cons
+  (handle-exceptions
+   exn
+   #f
+   (match (get-bot-command msg)
+          ;; Add Op
+          (('add 'op user hostmask)
+           (set! op-list
                  (cons
-                  (irc:message-sender msg)
-                  (->string pass))
+                  (cons (->string user) (->string hostmask))
+                  op-list))
+           (write-op-list)
+           (irc:say con
+                    (string-append
+                     "Added user \"" (->string user) "\" to op list.")
+                    (message-dest msg))
+           #t)
+                                        ; Remove Op
+          (('remove 'op user)
+           (set! op-list
                  (remove
-                  (lambda (op)
-                    (equal? (car op) (irc:message-sender msg)))
-                  op-pass-list)))
-          (write-op-pass-list)
-          (irc:say con
-                   (string-append
-                    "Added Pass for user \"" (irc:message-sender msg) "\".")
-                   (message-dest msg)))
-         ; Tempory Op
-         (('op 'me pass)
-          (if (find (lambda (op-pass) (equal? op-pass (cons (irc:message-sender msg) (->string pass))))
-                    op-pass-list)
-              (begin
-                (set! temp-op-list
-                     (cons
-                      (cons (irc:message-sender msg) (message-hostmask msg))
-                      temp-op-list))
-                (irc:command
-                 con
-                 (string-append "mode " channel-name " +o " (irc:message-sender msg))))
-              '()))))
+                  (lambda (curr-op)
+                    (if (equal? (car curr-op) (->string user))
+                        (begin
+                          (irc:say con
+                                   (string-append
+                                    "Removed user \"" (->string user) "\" with hostmask \"" (->string (cdr curr-op)) "\" from op list.")
+                                   (message-dest msg))
+                          #t)
+                        #f)) op-list))
+           (write-op-list))
+                                        ; Remove Op (With hostmask)
+          (('remove 'op user hostmask)
+           (set! op-list
+                 (remove
+                  (lambda (curr-op)
+                    (if (equal? curr-op (cons (->string user) (->string hostmask)))
+                        (begin
+                          (irc:say con
+                                   (string-append
+                                    "Removed user \"" (->string user) "\" with hostmask \"" (->string (cdr curr-op)) "\" from op list.")
+                                   (message-dest msg))
+                          #t)
+                        #f)) op-list))
+           (write-op-list))
+                                        ; Temp Op Pass set
+          (('set 'pass pass)
+           (set! op-pass-list
+                 (cons
+                  (cons
+                   (irc:message-sender msg)
+                   (->string pass))
+                  (remove
+                   (lambda (op)
+                     (equal? (car op) (irc:message-sender msg)))
+                   op-pass-list)))
+           (write-op-pass-list)
+           (irc:say con
+                    (string-append
+                     "Added Pass for user \"" (irc:message-sender msg) "\".")
+                    (message-dest msg)))
+          )))
 
 
 ;(irc:remove-message-handler! con 'admin)
 
 (irc:add-message-handler! con (lambda (msg)
-                                (if (is-op? (irc:message-sender msg) (message-hostmask msg))
-                                    (if (get-bot-command msg)
-                                        (if (run-admin-command msg)
-                                            #t
-                                            #f)
-                                        #f))
-                                #f)
+                                (if (get-bot-command msg)
+                                    (if (is-op? (irc:message-sender msg) (message-hostmask msg))
+                                        (run-admin-command msg)
+                                        #f)
+                                    #f))
                           body: bot-name
                           command: "PRIVMSG"
                           tag: 'admin)
 
-;(irc:remove-message-handler! con 'eval)
+;(irc:remove-message-handler! con 'command)
 
 (irc:add-message-handler! con (lambda (msg)
-                                (let* ((search (string-search
-                                                (string-append "PRIVMSG (.*) :" bot-name "[,: ]*eval(.*)")
-                                                (irc:message-body msg)))
-                                       (resp-dest (message-dest msg)))
-                                  (handle-exceptions exn
-                                                     (irc:say con
-                                                              "Error in eval!"
-                                                              resp-dest)
-                                                     (irc:say con
-                                                              (->string
-                                                               (safe-eval
-                                                                (read
-                                                                 (open-input-string
-                                                                  (caddr search)))
-                                                                fuel: 1000
-                                                                allocation-limit: 1048576))
-                                                              resp-dest))))
-                          sender: (lambda (sender) #t)
-                          body: (string-append "PRIVMSG (.*) :" bot-name "[,: ]*eval(.*)")
-                          tag: 'eval
-                          command: "PRIVMSG")
-
+                                (if (get-bot-command msg)
+                                    (run-command msg)
+                                    #f))
+                          body: bot-name
+                          command: "PRIVMSG"
+                          tag: 'command)
 
 (define (run) (irc:run-message-loop con debug: #t pong: #t))
 
