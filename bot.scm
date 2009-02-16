@@ -5,10 +5,18 @@
     ((while cond) (letrec ((loop (lambda () (if cond (loop) #f)))) (loop)))
     ((while cond body ...) (letrec ((loop (lambda () (if cond (begin body ... (loop)) #f)))) (loop)))))
 
-(define (read-all in) (let ((R (read in)))
-                        (if (eof-object? R)
-                            '()
-                            (cons R (read-all in)))))
+(define (read-all #!optional in) (let ((R (read (if in in (current-input-port)))))
+                                   (if (eof-object? R)
+                                       '()
+                                       (cons R (read-all in)))))
+
+(define (write-all exp #!optional out)
+  (if (not (null? exp))
+      (begin
+        (write (car exp) (if out out (current-output-port)))
+        (newline (if out out (current-output-port)))
+        (write-all (cdr exp) out))
+      '()))
 
 (require-extension remote-repl-server)
 (rrepl-server-start 5040)
@@ -33,9 +41,14 @@
 ;(set! bot-server "efnet.xs4all.nl")
 (define channel-list '("#weightedsixes"))
 (define channel-name "#weightedsixes") ; only support one channel atm
-
 (define op-file "channel.ops")
+(define op-pass-file "pass.ops")
+(define feature-file "features.todo")
+
+
 (define op-list '())
+(define op-pass-list '())
+(define temp-op-list '())
 
 (define (read-op-list) (set! op-list (with-input-from-file op-file
                                        read)))
@@ -43,16 +56,16 @@
 (define (write-op-list) (with-output-to-file op-file
                           (lambda () (write op-list))))
 
-(define op-pass-file "pass.ops")
-(define op-pass-list '())
-
 (define (read-op-pass-list) (set! op-pass-list
                                   (with-input-from-file op-pass-file
                                     read)))
 (define (write-op-pass-list) (with-output-to-file op-pass-file
                                (lambda () (write op-pass-list))))
 
-(define temp-op-list '())
+(define (add-feature-todo desc)
+  (let ((feature-list (call-with-input-file feature-file read-all)))
+    (call-with-output-file feature-file
+      (lambda (out) (write-all (append feature-list (cons desc '())) out)))))
 
 (read-op-list)
 (read-op-pass-list)
@@ -164,7 +177,8 @@
                                          exp
                                          fuel: 1000
                                          allocation-limit: 1048576))
-                                       (message-dest msg)))))))
+                                       (message-dest msg))))
+          )))
 
 (define (run-admin-command msg)
   (handle-exceptions
@@ -227,7 +241,12 @@
                     (string-append
                      "Added Pass for user \"" (irc:message-sender msg) "\".")
                     (message-dest msg)))
-          )))
+                                        ; Feature Requiest
+          (('add 'bot 'todo rest ...)
+           (add-feature-todo rest)
+           (irc:say con
+                    "Added todo to bot feature list."
+                    (message-dest msg))))))
 
 
 ;(irc:remove-message-handler! con 'admin)
