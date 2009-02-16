@@ -5,6 +5,11 @@
     ((while cond) (letrec ((loop (lambda () (if cond (loop) #f)))) (loop)))
     ((while cond body ...) (letrec ((loop (lambda () (if cond (begin body ... (loop)) #f)))) (loop)))))
 
+(define (read-all in) (let ((R (read in)))
+                        (if (eof-object? R)
+                            '()
+                            (cons R (read-all in)))))
+
 (require-extension remote-repl-server)
 (rrepl-server-start 5040)
 
@@ -12,6 +17,8 @@
 
 (require-extension irc)
 (require-extension sandbox)
+
+(set! current-output-port (open-output-port "debug.log"))
 
 (define bot-name "endeebot")
 (define bot-server "irc.efnet.ch")
@@ -28,7 +35,19 @@
 (define (write-op-list) (with-output-to-file op-file
                           (lambda () (write op-list))))
 
+(define op-pass-file "pass.ops")
+(define op-pass-list '())
+
+(define (read-op-pass-list) (set! op-pass-list
+                                  (with-input-from-file op-pass-file
+                                    read)))
+(define (write-op-pass-list) (with-output-to-file op-pass-file
+                               (lambda () (write op-pass-list))))
+
+(define temp-op-list '())
+
 (read-op-list)
+(read-op-pass-list)
 
 (define (join-channels lst)
   (if (not (null? lst))
@@ -46,12 +65,16 @@
 (define (message-hostmask msg)
   (string-append (cadr (irc:message-prefix msg)) "@" (caddr (irc:message-prefix msg))))
 
-(define (is-op? name host)
+(define (is-in-op-list? name host lst)
   (find
    (lambda (op)
      (and (equal? (car op) name)
           (string-match (glob->regexp (cdr op)) host)))
-   op-list))
+   lst))
+
+(define (is-op? name host)
+  (or (is-in-op-list? name host op-list)
+      (is-in-op-list? name host temp-op-list)))
 
 (define (message-dest msg)
   (if (equal? bot-name (irc:message-receiver msg))
@@ -80,30 +103,101 @@
                           command: "JOIN"
                           tag: 'op)
 
+;(irc:remove-message-handler! con 'deop)
+
+(irc:add-message-handler! con
+                          (lambda (msg)
+                            (set! temp-op-list
+                                  (remove
+                                   (lambda (op) (equal? (message-hostmask msg) (cdr op)))
+                                   temp-op-list)))
+                          command: "PART"
+                          tag: 'deop)
+
 (define (get-bot-command msg)
   (let ((out (string-match (string-append
                             "^" bot-name "[,:]?[ ]*(.*)")
                            (message-body msg))))
     (if out
-        (cadr out)
+        (handle-exceptions exn
+                           #f
+                           (read-all
+                            (open-input-string
+                             (cadr out))))
         #f)))
 
 (define (run-admin-command msg)
-  (let ((cmd (string-match
-              "add op[ ]*([^ ]*)[ ]*([^ ]*)"
-              (get-bot-command msg))))
-    (if cmd
-        (begin
+  (match (get-bot-command msg)
+         ;; Add Op
+         (('add 'op user hostmask)
           (set! op-list
                 (cons
-                 (cons (cadr cmd) (caddr cmd))
+                 (cons (->string user) (->string hostmask))
                  op-list))
           (write-op-list)
           (irc:say con
                    (string-append
-                    "Added user \"" (cadr cmd) "\" to operator list.")
+                    "Added user \"" (->string user) "\" to op list.")
+                   (message-dest msg))
+          #t)
+         ; Remove Op
+         (('remove 'op user)
+          (set! op-list
+                (remove
+                 (lambda (curr-op)
+                   (if (equal? (car curr-op) (->string user))
+                       (begin
+                         (irc:say con
+                                  (string-append
+                                   "Removed user \"" (->string user) "\" with hostmask \"" (->string (cdr curr-op)) "\" from op list.")
+                                  (message-dest msg))
+                         #t)
+                       #f)) op-list))
+          (write-op-list))
+         ; Remove Op (With hostmask)
+         (('remove 'op user hostmask)
+          (set! op-list
+                (remove
+                 (lambda (curr-op)
+                   (if (equal? curr-op (cons (->string user) (->string hostmask)))
+                       (begin
+                         (irc:say con
+                                  (string-append
+                                   "Removed user \"" (->string user) "\" with hostmask \"" (->string (cdr curr-op)) "\" from op list.")
+                                  (message-dest msg))
+                         #t)
+                       #f)) op-list))
+          (write-op-list))
+         ; Temp Op Pass set
+         (('set 'pass pass)
+          (set! op-pass-list
+                (cons
+                 (cons
+                  (irc:message-sender msg)
+                  (->string pass))
+                 (remove
+                  (lambda (op)
+                    (equal? (car op) (irc:message-sender msg)))
+                  op-pass-list)))
+          (write-op-pass-list)
+          (irc:say con
+                   (string-append
+                    "Added Pass for user \"" (irc:message-sender msg) "\".")
                    (message-dest msg)))
-        '())))
+         ; Tempory Op
+         (('op 'me pass)
+          (if (find (lambda (op-pass) (equal? op-pass (cons (irc:message-sender msg) (->string pass))))
+                    op-pass-list)
+              (begin
+                (set! temp-op-list
+                     (cons
+                      (cons (irc:message-sender msg) (message-hostmask msg))
+                      temp-op-list))
+                (irc:command
+                 con
+                 (string-append "mode " channel-name " +o " (irc:message-sender msg))))
+              '()))))
+
 
 ;(irc:remove-message-handler! con 'admin)
 
