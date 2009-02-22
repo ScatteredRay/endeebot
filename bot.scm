@@ -44,11 +44,26 @@
 (define op-file "channel.ops")
 (define op-pass-file "pass.ops")
 (define feature-file "features.todo")
-
+(define irc-log-file "weightedsixes.log")
 
 (define op-list '())
 (define op-pass-list '())
 (define temp-op-list '())
+(define quit-func-list '())
+
+(define (add-quit-func func)
+  (set! quit-func-list (cons func quit-func-list)))
+
+(define (call-quit-funcs)
+  (map
+   (lambda (func) (func))
+   quit-func-list))
+
+(define irc-log (open-output-file irc-log-file #:append))
+
+(define (write-irc-log msg) (write msg irc-log) (newline irc-log) (flush-output irc-log))
+
+(add-quit-func (lambda () (close-output-port irc-log)))
 
 (define (read-op-list) (set! op-list (with-input-from-file op-file
                                        read)))
@@ -109,7 +124,7 @@
 
 ;(irc:remove-message-handler! con 'QUIT)
 
-(irc:add-message-handler! con (lambda (msg) (display "quit!") (irc:quit con "Bye") (exit))
+(irc:add-message-handler! con (lambda (msg) (display "quit!") (irc:quit con "Bye") (call-quit-funcs) (exit))
                           sender: (lambda (sender) (equal? sender "Arelius"))
                           body: (string-append "PRIVMSG .* :" bot-name "[,: ]*QUIT") tag: 'QUIT)
 
@@ -246,7 +261,18 @@
            (add-feature-todo rest)
            (irc:say con
                     "Added todo to bot feature list."
-                    (message-dest msg))))))
+                    (message-dest msg)))
+          ; Eval
+          (('op 'eval exp)
+           (handle-exceptions exn
+                              (irc:say con
+                                       "Error in eval!"
+                                       (message-dest msg))
+                              (irc:say con
+                                       (->string
+                                        (eval
+                                         exp))
+                                       (message-dest msg)))))))
 
 
 ;(irc:remove-message-handler! con 'admin)
@@ -260,6 +286,16 @@
                           body: bot-name
                           command: "PRIVMSG"
                           tag: 'admin)
+
+;(irc:remove-message-handler! con 'log)
+
+(irc:add-message-handler! con (lambda (msg)
+                                (if (not (equal? bot-name (irc:message-sender msg)))
+                                    (write-irc-log `(,(current-seconds) ,(->string (irc:message-sender msg)) ,(->string (message-body msg))))
+                                    '())
+                                #f)
+                          command: "PRIVMSG"
+                          tag: 'log)
 
 ;(irc:remove-message-handler! con 'command)
 
