@@ -26,6 +26,8 @@
 (require-extension irc)
 (require-extension sandbox)
 
+(load "quote_search.scm")
+
 ;(define current-file-output (open-output-file "debug.log"))
 
 ;(define (get-current-file-output-port) current-file-output)
@@ -302,7 +304,9 @@
 (irc:add-message-handler! con (lambda (msg)
                                 (if (get-bot-command msg)
                                     (run-command msg)
-                                    #f))
+                                    (irc:say con
+                                             (string-trim-both (match-quote-string (message-body msg)))
+                                             (message-dest msg))))
                           body: bot-name
                           command: "PRIVMSG"
                           tag: 'command)
