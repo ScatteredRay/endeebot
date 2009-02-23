@@ -47,6 +47,7 @@
 (define op-pass-file "pass.ops")
 (define feature-file "features.todo")
 (define irc-log-file "weightedsixes.log")
+(define quote-chance 25)
 
 (define op-list '())
 (define op-pass-list '())
@@ -274,6 +275,9 @@
                                          exp))
                                        (message-dest msg)))))))
 
+(define (cleanse-quote qt)
+  (string-translate* qt '(("<br>" . " "))))
+
 
 ;(irc:remove-message-handler! con 'admin)
 
@@ -300,14 +304,26 @@
 ;(irc:remove-message-handler! con 'command)
 
 (irc:add-message-handler! con (lambda (msg)
-                                (if (get-bot-command msg)
-                                    (run-command msg)
+                                (if (if (get-bot-command msg)
+                                        (run-command msg)
+                                        #f)
+                                    #t
                                     (irc:say con
-                                             (string-trim-both (match-quote-string (message-body msg)))
+                                             (cleanse-quote (string-trim-both (match-quote-string (message-body msg))))
                                              (message-dest msg))))
                           body: bot-name
                           command: "PRIVMSG"
                           tag: 'command)
+
+;(irc:remove-message-handler! con 'quote)
+
+(irc:add-message-handler! con (lambda (msg)
+                                (if (eq? (random quote-chance) 0)
+                                    (irc:say con
+                                             (cleanse-quote (string-trim-both (match-quote-string (message-body msg))))
+                                             (message-dest msg))))
+                          command: "PRIVMSG"
+                          tag: 'quote)
 
 (define (run) (irc:run-message-loop con debug: #t pong: #t))
 
