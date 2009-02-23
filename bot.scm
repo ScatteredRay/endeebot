@@ -5,11 +5,6 @@
     ((while cond) (letrec ((loop (lambda () (if cond (loop) #f)))) (loop)))
     ((while cond body ...) (letrec ((loop (lambda () (if cond (begin body ... (loop)) #f)))) (loop)))))
 
-(define (read-all #!optional in) (let ((R (read (if in in (current-input-port)))))
-                                   (if (eof-object? R)
-                                       '()
-                                       (cons R (read-all in)))))
-
 (define (write-all exp #!optional out)
   (if (not (null? exp))
       (begin
@@ -27,6 +22,11 @@
 (require-extension sandbox)
 
 (load "quote_search.scm")
+
+(define (read-all #!optional in) (let ((R (read (if in in (current-input-port)))))
+                                   (if (eof-object? R)
+                                       '()
+                                       (cons R (read-all in)))))
 
 ;(define current-file-output (open-output-file "debug.log"))
 
@@ -159,9 +159,7 @@
     (if out
         (handle-exceptions exn
                            #f
-                           (read-all
-                            (open-input-string
-                             (cadr out))))
+                           (call-with-input-string (cadr out) read-all))
         #f)))
 
 (define (run-command msg)
