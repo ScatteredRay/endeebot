@@ -47,6 +47,7 @@
 (define op-pass-file "pass.ops")
 (define feature-file "features.todo")
 (define irc-log-file "weightedsixes.log")
+(define irc-reconnect-timeout 30)
 (define quote-chance 25)
 
 (define op-list '())
@@ -324,6 +325,17 @@
                                              (message-dest msg))))
                           command: "PRIVMSG"
                           tag: 'quote)
+
+;; Reconnection code
+(define (reconnect-timer sig)
+  (if (not (irc:connected? con))
+      (begin
+        (irc:connect con)
+        (join-channels channel-list)))
+  (set-alarm! irc-reconnect-timeout))
+
+(set-signal-handler! signal/alrm reconnect-timer)
+(set-alarm! irc-reconnect-timeout)
 
 (define (run) (irc:run-message-loop con debug: #t pong: #t))
 
